@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans min-h-screen selection:bg-brand-500 selection:text-white;
+  }
+}
+
+.evidence-highlight {
+  @apply bg-yellow-200/80 rounded px-1 transition-all duration-300;
+}
+
+.evidence-highlight-active {
+  @apply bg-yellow-300 ring-2 ring-brand-500 rounded px-1 transition-all duration-300 shadow-sm;
+}
