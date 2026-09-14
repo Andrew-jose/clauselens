@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clauselens-backend
+    ports:
+      - "8008:8080"
+    environment:
+      - PORT=8080
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_FLASH_MODEL=${GEMINI_FLASH_MODEL:-gemini-3.8-flash}
+      - GEMINI_PRO_MODEL=${GEMINI_PRO_MODEL:-gemini-3.8-flash}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-gemini-embedding-001}
+      - JWT_SECRET=${JWT_SECRET:-clauselens_hackathon_demo_jwt_secret_key_2026}
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173
+    volumes:
+      - backend-data:/app/backend/data
+      - backend-chroma:/app/backend/chroma_data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    image: node:20-alpine
+    container_name: clauselens-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8008/api
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  backend-data:
+  backend-chroma:
