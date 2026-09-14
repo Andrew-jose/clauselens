@@ -1,160 +1,386 @@
 import { useEffect, useState } from 'react';
-import { checkHealth, checkGeminiHealth } from './api/client';
-import type { HealthResponse, GeminiHealthResponse } from './api/client';
-import { ShieldCheck, FileText, CheckCircle2, AlertCircle, ArrowRight, BookOpen, Scale, Sparkles } from 'lucide-react';
+import {
+  checkHealth,
+  checkGeminiHealth,
+  getDocuments,
+  getDocumentChunks,
+  getClauses,
+  getFindings,
+  askQuestion,
+  compareLeases,
+  submitSituation,
+  getActionPlan,
+  getLawyerQuestions,
+  getExportPdfUrl,
+} from './api/client';
+import type {
+  DocumentItem,
+  DocumentChunk,
+  ClauseItem,
+  FindingItem,
+  MessageItem,
+  ClauseCitation,
+  SituationClassification,
+  ActionPlanData,
+  LawyerQuestionsData,
+} from './types';
+import { Header } from './components/shared/Header';
+import { Footer } from './components/shared/Footer';
+import { UploadModal } from './components/shared/UploadModal';
+import { AnalysisDashboard } from './components/dashboard/AnalysisDashboard';
+import { DocumentViewer } from './components/document/DocumentViewer';
+import { EvidenceRail } from './components/evidence/EvidenceRail';
+import { RiskPanel } from './components/risk/RiskPanel';
+import { ClauseExplorer } from './components/clauses/ClauseExplorer';
+import { AskDocument } from './components/chat/AskDocument';
+import { SituationPanel } from './components/situation/SituationPanel';
+import { CompareView } from './components/compare/CompareView';
+import { LawyerPrepView } from './components/lawyer/LawyerPrepView';
+import { Upload, ShieldCheck } from 'lucide-react';
 
-export function App() {
-  const [backendHealth, setBackendHealth] = useState<HealthResponse | null>(null);
-  const [geminiHealth, setGeminiHealth] = useState<GeminiHealthResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function App() {
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [selectedDocId, setSelectedDocId] = useState<string>('');
+  const [chunks, setChunks] = useState<DocumentChunk[]>([]);
+  const [clauses, setClauses] = useState<ClauseItem[]>([]);
+  const [findings, setFindings] = useState<FindingItem[]>([]);
+  const [situation, setSituation] = useState<SituationClassification | null>(null);
+  const [actionPlan, setActionPlan] = useState<ActionPlanData | null>(null);
+  const [lawyerQuestions, setLawyerQuestions] = useState<LawyerQuestionsData | null>(null);
 
+  const [activeCitation, setActiveCitation] = useState<ClauseCitation | null>(null);
+  const [citationHistory, setCitationHistory] = useState<ClauseCitation[]>([]);
+
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<MessageItem[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isSituationLoading, setIsSituationLoading] = useState(false);
+  const [isCompareLoading, setIsCompareLoading] = useState(false);
+
+  const [apiConnected, setApiConnected] = useState(true);
+  const [geminiConnected, setGeminiConnected] = useState(false);
+
+  // Initial Health & Documents Load
   useEffect(() => {
-    async function loadStatus() {
+    async function init() {
       try {
-        const [health, gemini] = await Promise.allSettled([
-          checkHealth(),
-          checkGeminiHealth(),
-        ]);
-        if (health.status === 'fulfilled') setBackendHealth(health.value);
-        if (gemini.status === 'fulfilled') setGeminiHealth(gemini.value);
-      } catch (e) {
-        console.error('Failed checking health:', e);
-      } finally {
-        setLoading(false);
+        const [h, g] = await Promise.allSettled([checkHealth(), checkGeminiHealth()]);
+        if (h.status === 'fulfilled') setApiConnected(true);
+        if (g.status === 'fulfilled' && g.value.status === 'ok') setGeminiConnected(true);
+
+        const docs = await getDocuments();
+        setDocuments(docs);
+        if (docs.length > 0) {
+          setSelectedDocId(docs[0].id);
+        }
+      } catch (err) {
+        console.error('Initial load failed:', err);
       }
     }
-    loadStatus();
+    init();
   }, []);
 
+  // When selected document changes, load all related data
+  useEffect(() => {
+    if (!selectedDocId) return;
+
+    async function loadDocumentData() {
+      try {
+        const [cList, clList, fList, planRes, qRes] = await Promise.allSettled([
+          getDocumentChunks(selectedDocId),
+          getClauses(selectedDocId),
+          getFindings(selectedDocId),
+          getActionPlan(selectedDocId),
+          getLawyerQuestions(selectedDocId),
+        ]);
+
+        if (cList.status === 'fulfilled') setChunks(cList.value);
+        if (clList.status === 'fulfilled') setClauses(clList.value);
+        if (fList.status === 'fulfilled') setFindings(fList.value);
+        if (planRes.status === 'fulfilled') {
+          setActionPlan(planRes.value);
+          if (planRes.value.situation_type && planRes.value.urgency) {
+            setSituation({
+              situation_type: planRes.value.situation_type,
+              urgency: planRes.value.urgency,
+              relevant_categories: ['termination_penalties', 'term_renewal'],
+            });
+          }
+        }
+        if (qRes.status === 'fulfilled') setLawyerQuestions(qRes.value);
+      } catch (err) {
+        console.error('Error loading document details:', err);
+      }
+    }
+
+    loadDocumentData();
+  }, [selectedDocId]);
+
+  const selectedDocument = documents.find((d) => d.id === selectedDocId);
+
+  // Citation handler
+  const handleSelectCitation = (citation: ClauseCitation) => {
+    setActiveCitation(citation);
+    setCitationHistory((prev) => {
+      const exists = prev.some((c) => c.quote === citation.quote && c.page === citation.page);
+      if (exists) return prev;
+      return [citation, ...prev].slice(0, 10);
+    });
+  };
+
+  const handleJumpToDocument = (page: number, clauseId?: string | null, quote?: string) => {
+    setActiveCitation({ page, clause_id: clauseId, quote: quote || '' });
+    setActiveTab('viewer');
+  };
+
+  // Q&A Question Send Handler
+  const handleSendMessage = async (question: string) => {
+    if (!selectedDocId) return;
+    const userMsg: MessageItem = {
+      id: String(Date.now()),
+      role: 'user',
+      content: question,
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setIsChatLoading(true);
+
+    try {
+      const resp = await askQuestion(selectedDocId, question);
+      const assistantMsg: MessageItem = {
+        id: resp.message_id || String(Date.now() + 1),
+        role: 'assistant',
+        content: resp.answer,
+        status: resp.status,
+        citations: resp.citations,
+        confidence_note: resp.confidence_note,
+      };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+
+      // If citations returned, set the first as active focus
+      if (resp.citations && resp.citations.length > 0) {
+        handleSelectCitation(resp.citations[0]);
+      }
+    } catch (err: any) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: `Error answering question: ${err.message}`,
+          status: 'not_found_in_document',
+        },
+      ]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  // Situation Submit Handler
+  const handleSubmitSituation = async (contextText: string) => {
+    if (!selectedDocId) return;
+    setIsSituationLoading(true);
+    try {
+      const sit = await submitSituation(selectedDocId, contextText);
+      setSituation(sit);
+
+      // Refresh Action Plan & Lawyer Questions
+      const [updatedPlan, updatedQs] = await Promise.all([
+        getActionPlan(selectedDocId),
+        getLawyerQuestions(selectedDocId),
+      ]);
+      setActionPlan(updatedPlan);
+      setLawyerQuestions(updatedQs);
+    } catch (err) {
+      console.error('Failed submitting situation:', err);
+    } finally {
+      setIsSituationLoading(false);
+    }
+  };
+
+  // Comparison Run Handler
+  const handleCompare = async (docAId: string, docBId: string) => {
+    setIsCompareLoading(true);
+    try {
+      return await compareLeases(docAId, docBId);
+    } catch (err) {
+      console.error('Comparison error:', err);
+    } finally {
+      setIsCompareLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Navigation */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-brand-500 text-white p-2 rounded-lg shadow-sm">
-              <ShieldCheck className="w-6 h-6" />
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-brand-500 selection:text-white">
+      {/* Navbar Header */}
+      <Header
+        documents={documents}
+        selectedDocumentId={selectedDocId}
+        onSelectDocument={setSelectedDocId}
+        onOpenUploadModal={() => setIsUploadModalOpen(true)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        apiConnected={apiConnected}
+        geminiConnected={geminiConnected}
+      />
+
+      {/* Main Workspace Layout */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col">
+        {documents.length === 0 ? (
+          /* Empty State: Landing Hero */
+          <div className="my-auto text-center py-16 px-4 max-w-2xl mx-auto space-y-6 animate-fadeIn">
+            <div className="w-16 h-16 rounded-2xl bg-brand-600 text-white flex items-center justify-center mx-auto shadow-lg">
+              <ShieldCheck className="w-9 h-9" aria-hidden="true" />
             </div>
+
             <div>
-              <span className="text-xl font-bold tracking-tight text-slate-900">ClauseLens</span>
-              <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-brand-700">Tenant Edition</span>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-3 text-xs">
-              <div className="flex items-center space-x-1.5">
-                <span className="text-slate-500">API:</span>
-                {loading ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 animate-pulse">
-                    Checking...
-                  </span>
-                ) : backendHealth?.status === 'ok' ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                    <CheckCircle2 className="w-3 h-3 mr-1" /> Ready
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                    <AlertCircle className="w-3 h-3 mr-1" /> Offline
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-1.5">
-                <span className="text-slate-500">AI:</span>
-                {loading ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 animate-pulse">
-                    Checking...
-                  </span>
-                ) : geminiHealth?.status === 'ok' ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                    <Sparkles className="w-3 h-3 mr-1" /> Gemini Ready
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-brand-700">
-                    <Sparkles className="w-3 h-3 mr-1" /> {geminiHealth?.flash_model || 'gemini-3.8-flash'}
-                  </span>
-                )}
-              </div>
+              <h1 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                Clause<span className="text-brand-600">Lens</span>
+              </h1>
+              <p className="text-sm sm:text-base text-slate-600 mt-2 font-medium">
+                Every claim, traced to the clause it came from.
+              </p>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                An evidence-first tenancy assistant with an independent code-level citation validator. Understand your residential lease before signing.
+              </p>
             </div>
 
-            <button className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brand-500 hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 transition-colors">
-              Upload Lease
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-brand-600 border border-blue-200 mb-6">
-            <Scale className="w-3.5 h-3.5 mr-1.5" /> Evidence-First Tenancy Assistant
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight mb-4">
-            Every claim, traced to the clause it came from.
-          </h1>
-          <p className="text-lg text-slate-600 mb-8 leading-relaxed">
-            ClauseLens turns your dense residential lease into an evidence-verified map of your rights, risks, and next steps. Powered by code-level citation validation so you never receive an ungrounded claim.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-brand-500 hover:bg-brand-600 transition-all">
-              <FileText className="w-5 h-5 mr-2" /> Upload Your Lease (PDF / DOCX)
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </button>
-            <button className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 border border-slate-300 text-base font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 transition-all">
-              <BookOpen className="w-5 h-5 mr-2 text-slate-500" /> View Demo Lease
-            </button>
-          </div>
-        </div>
-
-        {/* 3 Pillars */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
-              <CheckCircle2 className="w-6 h-6" />
+            <div className="pt-2">
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all"
+              >
+                <Upload className="w-4 h-4" aria-hidden="true" />
+                <span>Upload Your Lease (PDF/DOCX)</span>
+              </button>
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Code-Verified Citations</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Every factual finding links directly to a verified excerpt in your uploaded document. Unsupported hallucinations are structurally blocked in code.
-            </p>
           </div>
+        ) : selectedDocument ? (
+          /* Active Document Workspace (Split: Main Tab Pane + Evidence Rail) */
+          <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-12rem)]">
+            {/* Left/Center Workspace */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {activeTab === 'dashboard' && (
+                <AnalysisDashboard
+                  document={selectedDocument}
+                  findings={findings}
+                  clauses={clauses}
+                  onNavigate={setActiveTab}
+                  onSelectFindingCitation={(quote, page, clauseId) =>
+                    handleSelectCitation({ quote, page, clause_id: clauseId })
+                  }
+                />
+              )}
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 text-brand-600 flex items-center justify-center mb-4">
-              <Scale className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Dynamic Situation Router</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Share your scenario (e.g. early job relocation, security deposit dispute) and watch risk prioritization adapt specifically to your tenant context.
-            </p>
-          </div>
+              {activeTab === 'viewer' && (
+                <div className="h-[750px]">
+                  <DocumentViewer
+                    chunks={chunks}
+                    documentName={selectedDocument.filename}
+                    activeCitation={activeCitation}
+                    onSelectClause={(clauseId, quote) => {
+                      setActiveCitation({ page: 1, clause_id: clauseId, quote: quote || '' });
+                    }}
+                  />
+                </div>
+              )}
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow transition-shadow">
-            <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
-              <FileText className="w-6 h-6" />
+              {activeTab === 'risk' && (
+                <RiskPanel
+                  findings={findings}
+                  onSelectCitation={(quote, page, clauseId) => {
+                    handleSelectCitation({ quote, page, clause_id: clauseId });
+                    setActiveTab('viewer');
+                  }}
+                  onAskAboutClause={(q) => {
+                    setActiveTab('ask');
+                    handleSendMessage(q);
+                  }}
+                />
+              )}
+
+              {activeTab === 'clauses' && (
+                <ClauseExplorer
+                  clauses={clauses}
+                  onSelectClause={(clauseId, quote, page) => {
+                    handleSelectCitation({
+                      clause_id: clauseId,
+                      quote: quote || '',
+                      page: page || 1,
+                    });
+                    setActiveTab('viewer');
+                  }}
+                />
+              )}
+
+              {activeTab === 'ask' && (
+                <div className="h-[750px]">
+                  <AskDocument
+                    messages={chatMessages}
+                    onSendMessage={handleSendMessage}
+                    onSelectCitation={handleSelectCitation}
+                    isLoading={isChatLoading}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'situation' && (
+                <SituationPanel
+                  situation={situation}
+                  actionPlan={actionPlan}
+                  onSubmitSituation={handleSubmitSituation}
+                  onSelectCitation={handleSelectCitation}
+                  onNavigateToLawyer={() => setActiveTab('lawyer')}
+                  isLoading={isSituationLoading}
+                />
+              )}
+
+              {activeTab === 'compare' && (
+                <CompareView
+                  documents={documents}
+                  currentDocId={selectedDocId}
+                  onCompare={handleCompare}
+                  onSelectCitation={handleSelectCitation}
+                  isLoading={isCompareLoading}
+                />
+              )}
+
+              {activeTab === 'lawyer' && (
+                <LawyerPrepView
+                  document={selectedDocument}
+                  questionsData={lawyerQuestions}
+                  exportPdfUrl={getExportPdfUrl(selectedDocId)}
+                />
+              )}
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Lawyer-Prep Packet</h3>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Generate an organized, clause-referenced briefing packet with prioritized questions ready for a tenant clinic or consultation.
-            </p>
+
+            {/* Right Evidence Rail (Permanently Linked) */}
+            <div className="lg:w-80 xl:w-96 shrink-0 h-[750px] sticky top-20">
+              <EvidenceRail
+                activeCitation={activeCitation}
+                citationHistory={citationHistory}
+                documentName={selectedDocument.filename}
+                onJumpToDocument={handleJumpToDocument}
+                onClearActive={() => setActiveCitation(null)}
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
       </main>
 
-      {/* Persistent Legal Disclaimer Footer */}
-      <footer className="border-t border-slate-200 bg-white py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>© 2026 ClauseLens. Built for the GenAI Legal Accessibility Challenge.</p>
-          <p className="font-medium text-slate-600">
-            ClauseLens provides information, not legal advice.
-          </p>
-        </div>
-      </footer>
+      {/* Upload Modal Dialog */}
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUploadSuccess={(doc) => {
+          setDocuments((prev) => [doc, ...prev]);
+          setSelectedDocId(doc.id);
+          setActiveTab('dashboard');
+        }}
+      />
+
+      {/* Persistent Legal Safety Footer */}
+      <Footer />
     </div>
   );
 }
-
-export default App;
