@@ -58,11 +58,17 @@ def index_chunks(document_id: str, chunks: List[Dict[str, Any]], embeddings: Lis
 def search_chunks(
     query_embedding: List[float],
     document_id: str,
-    top_k: int = 6,
+    top_k: int = 10,
     where_filter: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve top-k chunks for a document given a query embedding."""
     collection = get_chunks_collection()
+
+    total_count = collection.count()
+    if total_count == 0:
+        return []
+
+    actual_k = min(top_k, total_count)
 
     # Always enforce document scoping
     scoped_where = {"document_id": document_id}
@@ -71,7 +77,7 @@ def search_chunks(
 
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=top_k,
+        n_results=actual_k,
         where=scoped_where,
     )
 
