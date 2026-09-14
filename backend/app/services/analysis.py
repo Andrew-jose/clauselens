@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 import re
 
 ORDERED_CATEGORY_PATTERNS = [
-    (re.compile(r'\b(termination_penalties|termination|early termination|terminate|penalty|penalties|eviction|default)\b', re.I), ClauseCategory.TERMINATION_PENALTIES),
-    (re.compile(r'\b(term_renewal|renewal|term and duration|initial term|term length|duration)\b', re.I), ClauseCategory.TERM_RENEWAL),
+    (re.compile(r'\b(early termination|termination_penalties|penalty|penalties|default)\b', re.I), ClauseCategory.TERMINATION_PENALTIES),
+    (re.compile(r'\b(term_renewal|renewal|notice of termination or renewal|notice of termination|vacate or renew|intent to vacate|term and duration|initial term|term length|duration)\b', re.I), ClauseCategory.TERM_RENEWAL),
+    (re.compile(r'\b(termination|terminate|eviction)\b', re.I), ClauseCategory.TERMINATION_PENALTIES),
     (re.compile(r'\b(rent_fees|rent|monthly rent|late fee|fees|payment)\b', re.I), ClauseCategory.RENT_FEES),
     (re.compile(r'\b(deposit|security deposit|escrow)\b', re.I), ClauseCategory.DEPOSIT),
     (re.compile(r'\b(repairs_habitability|repair|repairs|habitability|maintenance)\b', re.I), ClauseCategory.REPAIRS_HABITABILITY),
@@ -71,9 +72,9 @@ def extract_fallback_clauses_for_chunk(chunk: Chunk) -> List[Dict[str, Any]]:
     # Determine category based on heading/text
     category = map_category_string(f"{heading} {text[:100]}")
 
-    # Choose a concise verbatim quote from the chunk (first sentence or up to 30 words)
+    # Choose a concise verbatim quote from the chunk (up to 60 words)
     words = text.split()
-    quote = " ".join(words[:min(len(words), 25)])
+    quote = " ".join(words[:min(len(words), 60)])
 
     summary = f"Defines obligations regarding {heading}."
     if category == ClauseCategory.TERMINATION_PENALTIES:
