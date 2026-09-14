@@ -9,6 +9,8 @@ from app.core.rate_limit import limiter
 from app.api.health import router as health_router
 from app.api.documents import router as documents_router
 from app.api.qa import router as qa_router
+from app.api.clauses import router as clauses_router
+from app.api.findings import router as findings_router
 from app.db.session import init_db
 
 
@@ -43,6 +45,8 @@ app.add_middleware(
 app.include_router(health_router, prefix=settings.API_V1_STR)
 app.include_router(documents_router, prefix=settings.API_V1_STR)
 app.include_router(qa_router, prefix=settings.API_V1_STR)
+app.include_router(clauses_router, prefix=settings.API_V1_STR)
+app.include_router(findings_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
