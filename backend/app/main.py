@@ -12,6 +12,7 @@ from app.api.qa import router as qa_router
 from app.api.clauses import router as clauses_router
 from app.api.findings import router as findings_router
 from app.api.compare import router as compare_router
+from app.api.situation import router as situation_router
 from app.db.session import init_db
 
 
@@ -49,6 +50,7 @@ app.include_router(qa_router, prefix=settings.API_V1_STR)
 app.include_router(clauses_router, prefix=settings.API_V1_STR)
 app.include_router(findings_router, prefix=settings.API_V1_STR)
 app.include_router(compare_router, prefix=settings.API_V1_STR)
+app.include_router(situation_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")
