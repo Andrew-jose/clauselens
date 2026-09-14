@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, verify_document_access
 from app.core.rate_limit import limiter
 from app.models.entities import (
     User,
@@ -44,9 +44,7 @@ async def ask_document(
     Retrieves top chunks, queries Gemini with structured output, validates
     citations in code against stored chunk text, and verifies groundedness.
     """
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     # 1. Retrieve or initialize conversation
     conv_id = payload.conversation_id
@@ -182,6 +180,12 @@ def get_conversation(
     ).first()
 
     if not conv:
+        other_conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if other_conv:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: you do not have permission to view this conversation.",
+            )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
 
     messages_out = []

@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, verify_document_access
 from app.models.entities import User, Document, Finding, Clause, SeverityLevel, ClauseCategory
 from app.schemas.clauses import FindingResponse
 from app.services.analysis import analyze_document
@@ -19,9 +19,7 @@ def get_document_findings(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve risk and obligation findings with severity ratings and verified quotes."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     if not doc.findings:
         analyze_document(document_id, db)
@@ -68,9 +66,7 @@ def trigger_document_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """Trigger or refresh full document analysis (summary, clauses, risks)."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     result = analyze_document(document_id, db)
     return {

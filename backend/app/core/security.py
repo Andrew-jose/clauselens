@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 import bcrypt
 from app.config import settings
 from app.db.session import get_db
-from app.models.entities import User
+from app.models.entities import User, Document
 
 DEMO_USER_EMAIL = "tenant@clauselens.ai"
 
@@ -34,37 +34,119 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
+def decode_access_token(token: str) -> dict:
+    """Decodes and validates a JWT token. Raises HTTPException(401) on failure."""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid, expired, or malformed authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def get_strict_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    Strict authentication dependency: requires a valid Bearer token.
+    Raises 401 if missing or invalid.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided or improperly formatted.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.split(" ", 1)[1]
+    payload = decode_access_token(token)
+    user_id: Optional[str] = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User associated with token no longer exists.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
+
+
 def get_current_user(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Returns current authenticated user or automatically seeds/returns
-    the default demo tenant user if no auth token is provided yet.
+    Returns current authenticated user if Bearer token is provided.
+    If an invalid Bearer token is provided, raises 401.
+    If no Authorization header is provided, automatically seeds and returns
+    the default demo tenant user for seamless unauthenticated exploration.
     """
-    user = None
-
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
-        try:
-            payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-            user_id: str = payload.get("sub")
-            if user_id:
-                user = db.query(User).filter(User.id == user_id).first()
-        except JWTError:
-            pass
-
-    if not user:
-        # Guarantee a standard tenant user exists in DB
-        user = db.query(User).filter(User.email == DEMO_USER_EMAIL).first()
-        if not user:
-            user = User(
-                id=str(uuid.uuid4()),
-                email=DEMO_USER_EMAIL,
-                password_hash=get_password_hash("clauselens_demo_pass"),
+    if authorization:
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header must start with 'Bearer '.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+        token = authorization.split(" ", 1)[1]
+        payload = decode_access_token(token)
+        user_id: Optional[str] = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token missing subject identifier.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user
+
+    # No Authorization header passed: fall back to seeded demo tenant
+    user = db.query(User).filter(User.email == DEMO_USER_EMAIL).first()
+    if not user:
+        user = User(
+            id=str(uuid.uuid4()),
+            email=DEMO_USER_EMAIL,
+            password_hash=get_password_hash("clauselens_demo_pass"),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
     return user
+
+
+def verify_document_access(document_id: str, user_id: str, db: Session) -> Document:
+    """
+    Validates that a document exists and belongs to the specified user.
+    Raises 404 if not found, or 403 Forbidden if owned by a different user.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+    if doc.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: you do not have permission to access this document.",
+        )
+    return doc

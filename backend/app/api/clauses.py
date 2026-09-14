@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, verify_document_access
 from app.models.entities import User, Document, Clause, ClauseCategory
 from app.schemas.clauses import ClauseResponse
 from app.services.analysis import analyze_document
@@ -18,9 +18,7 @@ def get_document_clauses(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve categorized clauses for a document with plain-language summaries and citations."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     # If clauses have not been analyzed yet, run analysis pipeline
     if not doc.clauses:

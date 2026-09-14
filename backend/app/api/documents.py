@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, verify_document_access
 from app.core.rate_limit import limiter
 from app.models.entities import (
     User,
@@ -155,9 +155,7 @@ def get_document(
     current_user: User = Depends(get_current_user),
 ):
     """Get document details with counts."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     chunks_count = db.query(Chunk).filter(Chunk.document_id == document_id).count()
     return DocumentDetailResponse(
@@ -182,9 +180,7 @@ def get_document_status(
     current_user: User = Depends(get_current_user),
 ):
     """Poll document processing status."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     chunks_count = db.query(Chunk).filter(Chunk.document_id == document_id).count()
     return DocumentStatusResponse(
@@ -202,9 +198,7 @@ def get_document_chunks(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve all chunks for a document."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     return db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.page_number.asc()).all()
 
@@ -216,9 +210,7 @@ def delete_document(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a document, its database records, and ChromaDB vector embeddings."""
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     # Remove ChromaDB vectors
     delete_document_vectors(document_id)

@@ -35,6 +35,8 @@ def start_comparison(
             user_id=current_user.id,
             db=db,
         )
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
@@ -76,6 +78,12 @@ def get_comparison(
     ).first()
 
     if not session:
+        other_session = db.query(ComparisonSession).filter(ComparisonSession.id == comparison_id).first()
+        if other_session:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: you do not have permission to view this comparison.",
+            )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comparison session not found.")
 
     findings_out = [

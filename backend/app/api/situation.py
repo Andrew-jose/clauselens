@@ -1,10 +1,11 @@
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import get_current_user
-from app.models.entities import User, Document, ActionPlan, Question
+from app.core.security import get_current_user, verify_document_access
+from app.models.entities import User, Document, ActionPlan, Question, AuditEvent
 from app.schemas.situation import (
     SituationRequest,
     SituationResponse,
@@ -37,9 +38,7 @@ def submit_situation(
     assigns urgency, identifies relevant categories, and triggers situation-specific
     action plan and lawyer question updates.
     """
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     # Ensure document has findings analyzed
     if not doc.findings:
@@ -84,9 +83,7 @@ def get_action_plan(
     Retrieve the current ordered action plan for this document.
     Generates a default plan if one has not yet been requested.
     """
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     if not doc.findings:
         analyze_document(document_id, db)
@@ -157,9 +154,7 @@ def get_lawyer_questions(
     Retrieve topic-grouped consultation questions prepared for legal counsel.
     Generates questions if not yet created.
     """
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     if not doc.findings:
         analyze_document(document_id, db)
@@ -200,9 +195,7 @@ def export_lawyer_packet_pdf(
     """
     Generate and stream a branded PDF lawyer-consultation preparation packet.
     """
-    doc = db.query(Document).filter(Document.id == document_id, Document.user_id == current_user.id).first()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    doc = verify_document_access(document_id, current_user.id, db)
 
     if not doc.findings:
         analyze_document(document_id, db)
@@ -222,6 +215,17 @@ def export_lawyer_packet_pdf(
     pdf_bytes = generate_lawyer_prep_pdf(document_id, db)
 
     filename = f"lawyer_prep_{doc.id[:8]}.pdf"
+
+    # Log audit event for PDF export
+    audit = AuditEvent(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        event_type="export",
+        metadata_json={"document_id": document_id, "format": "pdf", "filename": filename},
+    )
+    db.add(audit)
+    db.commit()
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

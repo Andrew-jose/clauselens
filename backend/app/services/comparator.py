@@ -21,6 +21,7 @@ from app.services.gemini_client import generate_structured_json
 from app.services.validator import verify_citation_quote
 from app.services.analysis import analyze_document
 from app.services.verifier import strip_fabricated_citations
+from app.core.security import verify_document_access
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +99,8 @@ def compare_documents(
     Routes synthesis to GEMINI_PRO_MODEL and independently validates citations
     in code for both documents.
     """
-    doc_a = db.query(Document).filter(Document.id == doc_a_id, Document.user_id == user_id).first()
-    doc_b = db.query(Document).filter(Document.id == doc_b_id, Document.user_id == user_id).first()
-
-    if not doc_a or not doc_b:
-        raise ValueError("One or both documents not found or unauthorized.")
+    doc_a = verify_document_access(doc_a_id, user_id, db)
+    doc_b = verify_document_access(doc_b_id, user_id, db)
 
     # Ensure both documents have their clauses extracted
     if not doc_a.clauses:
