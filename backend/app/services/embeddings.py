@@ -28,10 +28,11 @@ def embed_texts(texts: List[str], task_type: str = "retrieval_document") -> List
         return []
 
     # 1. Try primary Gemini Embeddings if API key is provided
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
+            from app.services.gemini_client import _ensure_genai_configured
+            _ensure_genai_configured()
             import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
 
             # Gemini embedding model format
             model_name = settings.GEMINI_EMBEDDING_MODEL

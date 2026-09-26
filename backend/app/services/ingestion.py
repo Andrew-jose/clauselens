@@ -1,5 +1,5 @@
 import io
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 import fitz  # PyMuPDF
 import docx
 
@@ -23,7 +23,7 @@ def validate_file_magic_bytes(content: bytes, filename: str) -> Tuple[bool, str]
     return False, "unknown"
 
 
-def extract_pdf_pages(content: bytes) -> List[Dict[str, any]]:
+def extract_pdf_pages(content: bytes) -> List[Dict[str, Any]]:
     """
     Extract text page-by-page from a PDF using PyMuPDF.
     Strips embedded JavaScript, launch actions, and suspicious annotations for defense in depth.
@@ -57,7 +57,7 @@ def extract_pdf_pages(content: bytes) -> List[Dict[str, any]]:
     return pages_data
 
 
-def extract_docx_pages(content: bytes) -> List[Dict[str, any]]:
+def extract_docx_pages(content: bytes) -> List[Dict[str, Any]]:
     """
     Extract text from a DOCX document using python-docx.
     Treats paragraphs as virtual pages or partitions into logical chunks.
@@ -94,7 +94,7 @@ def extract_docx_pages(content: bytes) -> List[Dict[str, any]]:
     return pages_data
 
 
-def extract_document_pages(content: bytes, filename: str, mime_type: str) -> List[Dict[str, any]]:
+def extract_document_pages(content: bytes, filename: str, mime_type: str) -> List[Dict[str, Any]]:
     """Dispatcher for extracting text from supported document types."""
     if mime_type == "application/pdf" or filename.lower().endswith(".pdf"):
         return extract_pdf_pages(content)

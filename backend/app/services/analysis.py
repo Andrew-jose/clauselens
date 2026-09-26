@@ -1,3 +1,4 @@
+import re
 import uuid
 import json
 import logging
@@ -29,8 +30,6 @@ from app.services.validator import verify_citation_quote
 from app.services.verifier import strip_fabricated_citations
 
 logger = logging.getLogger(__name__)
-
-import re
 
 ORDERED_CATEGORY_PATTERNS = [
     (re.compile(r'\b(early termination|termination_penalties|penalty|penalties|default)\b', re.I), ClauseCategory.TERMINATION_PENALTIES),
@@ -221,7 +220,7 @@ def analyze_document(document_id: str, db: Session) -> Dict[str, Any]:
 
     # 1. Summarization
     full_text_sample = "\n\n".join([f"Page {c.page_number}: {c.text}" for c in chunks[:10]])
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
             summary_output = generate_structured_json(
                 system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
@@ -245,7 +244,7 @@ def analyze_document(document_id: str, db: Session) -> Dict[str, Any]:
     for chunk in chunks:
         extracted_data = []
 
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+        if settings.has_gemini_key:
             try:
                 user_prompt = CLAUSE_EXTRACTION_USER_PROMPT_TEMPLATE.format(
                     chunk_text=chunk.text,
@@ -295,7 +294,7 @@ def analyze_document(document_id: str, db: Session) -> Dict[str, Any]:
     for clause, chunk_text in stored_clauses:
         findings_data = []
 
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+        if settings.has_gemini_key:
             try:
                 user_prompt = RISK_DETECTION_USER_PROMPT_TEMPLATE.format(
                     clause_json=json.dumps({"heading": clause.heading, "summary": clause.summary, "quote": clause.quote}),

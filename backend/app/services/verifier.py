@@ -1,7 +1,7 @@
 import re
 import json
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def strip_fabricated_citations(text: str) -> str:
 
 def run_self_check_verifier(
     answer: str,
-    citations: List[Dict[str, any]],
+    citations: List[Dict[str, Any]],
     retrieved_chunks_text: str,
 ) -> Tuple[bool, List[str]]:
     """
@@ -51,14 +51,15 @@ def run_self_check_verifier(
     """
     if not citations:
         # If there are zero citations, an answer cannot be grounded
-        sentences = [s.strip() for s in re.split(r'[\.\?\!]+', answer) if len(s.strip()) > 10]
+        sentences = [s.strip() for s in re.split(r'[\.\\?\!]+', answer) if len(s.strip()) > 10]
         return False, sentences
 
     # If Gemini API key is available, execute the fast Flash self-check
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
+            from app.services.gemini_client import _ensure_genai_configured
+            _ensure_genai_configured()
             import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(
                 settings.GEMINI_FLASH_MODEL,
                 generation_config={"response_mime_type": "application/json"},

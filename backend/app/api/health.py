@@ -18,7 +18,7 @@ def health_check():
 @router.get("/health/gemini")
 def gemini_health_check():
     """Check Gemini API configuration and reachability."""
-    if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "your_gemini_api_key_here":
+    if not settings.has_gemini_key:
         return {
             "status": "unconfigured",
             "message": "GEMINI_API_KEY is not set or using placeholder.",
@@ -28,9 +28,10 @@ def gemini_health_check():
 
     start = time.perf_counter()
     try:
-        # Check client reachability
+        # Use cached configuration from gemini_client
+        from app.services.gemini_client import _ensure_genai_configured
+        _ensure_genai_configured()
         import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
         model = genai.GenerativeModel(settings.GEMINI_FLASH_MODEL)
         response = model.generate_content("ping", request_options={"timeout": 5})
         latency_ms = round((time.perf_counter() - start) * 1000, 2)

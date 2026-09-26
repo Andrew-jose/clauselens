@@ -248,3 +248,29 @@ def test_rate_limiting_triggers_429():
         limiter.enabled = False
 
 
+def test_cors_preflight_and_origin_policy():
+    """
+    T3: Verify CORS preflight OPTIONS request returns expected headers and respects origin policy.
+    """
+    # Allowed origin preflight
+    headers = {
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Authorization, Content-Type",
+    }
+    resp = client.options("/api/documents", headers=headers)
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    allowed_methods = resp.headers.get("access-control-allow-methods", "")
+    assert "POST" in allowed_methods
+
+    # Disallowed origin
+    bad_headers = {
+        "Origin": "http://untrusted-attacker-site.com",
+        "Access-Control-Request-Method": "POST",
+    }
+    bad_resp = client.options("/api/documents", headers=bad_headers)
+    assert bad_resp.headers.get("access-control-allow-origin") != "http://untrusted-attacker-site.com"
+
+
+

@@ -134,6 +134,12 @@ def compare_documents(
 
     all_categories = set(a_by_cat.keys()).union(set(b_by_cat.keys()))
 
+    # Pre-fetch all chunks for both documents once (eliminates O(N x categories) redundant queries)
+    doc_a_chunks = db.query(Chunk).filter(Chunk.document_id == doc_a_id).all()
+    doc_a_full = " ".join([ch.text for ch in doc_a_chunks])
+    doc_b_chunks = db.query(Chunk).filter(Chunk.document_id == doc_b_id).all()
+    doc_b_full = " ".join([ch.text for ch in doc_b_chunks])
+
     for cat in all_categories:
         c_list_a = a_by_cat.get(cat, [])
         c_list_b = b_by_cat.get(cat, [])
@@ -157,7 +163,7 @@ def compare_documents(
 
         for c_a, c_b in pairs:
             comparison_result = None
-            if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+            if settings.has_gemini_key:
                 try:
                     user_prompt = COMPARISON_USER_PROMPT_TEMPLATE.format(
                         category=cat.value,
@@ -185,16 +191,12 @@ def compare_documents(
             quote_a = cit_a.get("quote", c_a.quote or "")
             quote_b = cit_b.get("quote", c_b.quote or "")
 
-            # Verify against Doc A chunks
-            doc_a_chunks = db.query(Chunk).filter(Chunk.document_id == doc_a_id).all()
-            doc_a_full = " ".join([ch.text for ch in doc_a_chunks])
+            # Verify against Doc A chunks (pre-joined)
             is_valid_a, _ = verify_citation_quote(quote_a, doc_a_full)
             if not is_valid_a:
                 quote_a = c_a.quote or ""
 
-            # Verify against Doc B chunks
-            doc_b_chunks = db.query(Chunk).filter(Chunk.document_id == doc_b_id).all()
-            doc_b_full = " ".join([ch.text for ch in doc_b_chunks])
+            # Verify against Doc B chunks (pre-joined)
             is_valid_b, _ = verify_citation_quote(quote_b, doc_b_full)
             if not is_valid_b:
                 quote_b = c_b.quote or ""

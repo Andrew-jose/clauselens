@@ -16,15 +16,12 @@ export const LawyerPrepView: React.FC<LawyerPrepViewProps> = ({
 }) => {
   const [checkedQuestions, setCheckedQuestions] = useState<{ [id: number]: boolean }>({});
   const [customQuestion, setCustomQuestion] = useState('');
-  const [localQuestions, setLocalQuestions] = useState<LawyerQuestionItem[]>(
-    questionsData?.questions || []
-  );
+  const [customQuestions, setCustomQuestions] = useState<LawyerQuestionItem[]>([]);
 
-  React.useEffect(() => {
-    if (questionsData?.questions) {
-      setLocalQuestions(questionsData.questions);
-    }
-  }, [questionsData]);
+  const allQuestions = [
+    ...(questionsData?.questions || []),
+    ...customQuestions,
+  ];
 
   const toggleCheck = (idx: number) => {
     setCheckedQuestions((prev) => ({ ...prev, [idx]: !prev[idx] }));
@@ -33,7 +30,7 @@ export const LawyerPrepView: React.FC<LawyerPrepViewProps> = ({
   const handleAddCustom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customQuestion.trim()) return;
-    setLocalQuestions((prev) => [
+    setCustomQuestions((prev) => [
       ...prev,
       {
         topic: 'Custom Question',
@@ -74,7 +71,7 @@ export const LawyerPrepView: React.FC<LawyerPrepViewProps> = ({
       <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            Targeted Questions for Legal Counsel ({localQuestions.length})
+            Targeted Questions for Legal Counsel ({allQuestions.length})
           </h3>
           <span className="text-xs text-slate-500 font-medium">
             Prioritized by high-severity findings &bull; Fabricated statutes guarded
@@ -82,13 +79,13 @@ export const LawyerPrepView: React.FC<LawyerPrepViewProps> = ({
         </div>
 
         {/* Questions List */}
-        {localQuestions.length === 0 ? (
+        {allQuestions.length === 0 ? (
           <p className="text-xs text-slate-500 py-6 text-center">
             No specific legal questions generated yet.
           </p>
         ) : (
           <div className="space-y-3">
-            {localQuestions.map((q, idx) => {
+            {allQuestions.map((q, idx) => {
               const isChecked = checkedQuestions[idx];
               return (
                 <div

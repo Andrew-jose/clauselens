@@ -21,21 +21,27 @@ def rerank_chunks_by_categories(
     chunks: List[Dict[str, Any]],
     relevant_categories: List[str],
     document_id: Optional[str] = None,
+    db: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """
     Re-rank chunks dynamically based on the Situation Router's relevant categories.
     Chunks matching the relevant categories receive higher priority and move to the top.
+    Reuses caller's DB session when provided to prevent redundant connection overhead.
     """
     if not relevant_categories or not chunks:
         return chunks
 
     matching_clause_ids = set()
     if document_id:
-        try:
+        from app.models.entities import Clause
+        should_close = False
+        active_db = db
+        if active_db is None:
             from app.db.session import SessionLocal
-            from app.models.entities import Clause
-            db = SessionLocal()
-            clauses = db.query(Clause).filter(
+            active_db = SessionLocal()
+            should_close = True
+        try:
+            clauses = active_db.query(Clause).filter(
                 Clause.document_id == document_id,
                 Clause.category.in_(relevant_categories)
             ).all()
@@ -44,9 +50,11 @@ def rerank_chunks_by_categories(
                     matching_clause_ids.add(cl.clause_number.lower().strip())
                 if cl.id:
                     matching_clause_ids.add(cl.id)
-            db.close()
         except Exception:
             pass
+        finally:
+            if should_close:
+                active_db.close()
 
     scored_chunks = []
     for idx, chunk in enumerate(chunks):
@@ -84,18 +92,24 @@ def retrieve_relevant_chunks(
     document_id: str,
     top_k: int = 8,
     relevant_categories: Optional[List[str]] = None,
+    db: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve top-k chunks from ChromaDB for a document.
     Can optionally filter or re-rank by relevant categories.
     In offline/test mode without live API key, retrieves all document chunks to guarantee 100% recall.
+    Reuses caller's DB session when provided to prevent redundant connection overhead.
     """
-    if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "your_gemini_api_key_here":
-        from app.db.session import SessionLocal
+    if not settings.has_gemini_key:
         from app.models.entities import Chunk
-        db = SessionLocal()
+        should_close = False
+        active_db = db
+        if active_db is None:
+            from app.db.session import SessionLocal
+            active_db = SessionLocal()
+            should_close = True
         try:
-            db_chunks = db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.page_number.asc()).all()
+            db_chunks = active_db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.page_number.asc()).all()
             if db_chunks:
                 raw_chunks = [
                     {
@@ -111,10 +125,11 @@ def retrieve_relevant_chunks(
                     for c in db_chunks
                 ]
                 if relevant_categories:
-                    return rerank_chunks_by_categories(raw_chunks, relevant_categories, document_id)
+                    return rerank_chunks_by_categories(raw_chunks, relevant_categories, document_id, db=active_db)
                 return raw_chunks
         finally:
-            db.close()
+            if should_close:
+                active_db.close()
 
     query_vector = embed_query(question)
     chunks = search_chunks(
@@ -124,7 +139,7 @@ def retrieve_relevant_chunks(
     )
 
     if relevant_categories:
-        chunks = rerank_chunks_by_categories(chunks, relevant_categories, document_id)
+        chunks = rerank_chunks_by_categories(chunks, relevant_categories, document_id, db=db)
 
     return chunks
 

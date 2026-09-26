@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 
 # Regex detecting lease clause boundaries such as:
@@ -10,11 +10,6 @@ CLAUSE_HEADING_PATTERN = re.compile(
 )
 
 
-def estimate_tokens(text: str) -> int:
-    """Rough token estimation (approx 4 chars per token)."""
-    return max(1, len(text.split()))
-
-
 def fallback_sliding_window_chunking(
     text: str,
     page_number: int,
@@ -22,7 +17,7 @@ def fallback_sliding_window_chunking(
     heading: Optional[str] = None,
     chunk_size_words: int = 450,
     overlap_words: int = 75,
-) -> List[Dict[str, any]]:
+) -> List[Dict[str, Any]]:
     """Splits text into sliding window chunks when no structure or very long text."""
     words = text.split()
     if not words:
@@ -54,7 +49,7 @@ def fallback_sliding_window_chunking(
     return chunks
 
 
-def chunk_document_pages(pages_data: List[Dict[str, any]]) -> List[Dict[str, any]]:
+def chunk_document_pages(pages_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Structure-aware chunker that identifies numbered clauses and sections
     tied to page numbers, with token fallback for unstructured content.

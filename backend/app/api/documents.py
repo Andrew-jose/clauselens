@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
@@ -23,6 +24,8 @@ from app.services.ingestion import validate_file_magic_bytes, extract_document_p
 from app.services.chunker import chunk_document_pages
 from app.services.embeddings import embed_texts
 from app.services.vector_store import index_chunks, delete_document_vectors
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -133,9 +136,10 @@ async def upload_document(
     except Exception as e:
         doc.status = "failed"
         db.commit()
+        logger.error(f"Failed to process document {doc_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process document: {str(e)}",
+            detail="Failed to process document. Please ensure the file is a valid and readable PDF or DOCX.",
         )
 
 

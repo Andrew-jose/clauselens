@@ -125,7 +125,7 @@ def classify_situation(context_text: str) -> Dict[str, Any]:
     Classify tenant context into exactly one situation type, urgency, and relevant categories.
     Uses Gemini Flash if configured, else deterministic offline fallback.
     """
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
             user_prompt = format_situation_prompt(context_text)
             parsed = generate_structured_json(
@@ -186,7 +186,7 @@ def generate_action_plan(
     candidate_steps = []
 
     # Attempt Gemini generation if key is present
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
             user_prompt = format_action_plan_prompt(situation, findings_data)
             parsed = generate_structured_json(
@@ -412,7 +412,7 @@ def generate_lawyer_questions(
 
     candidate_questions = []
 
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
             user_prompt = format_lawyer_questions_prompt(findings_data, situation)
             parsed = generate_structured_json(

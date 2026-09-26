@@ -1,6 +1,6 @@
 import re
 import difflib
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from sqlalchemy.orm import Session
 from app.models.entities import Chunk, AuditEvent, GroundedStatus
 
@@ -21,6 +21,7 @@ def compute_fuzzy_overlap(quote: str, target: str) -> float:
     """
     Compute token/character overlap between quote and target text.
     Returns a score between 0.0 and 1.0.
+    Uses token-set pre-filter to bypass expensive SequenceMatcher for non-matching chunks.
     """
     norm_quote = normalize_text(quote)
     norm_target = normalize_text(target)
@@ -37,6 +38,13 @@ def compute_fuzzy_overlap(quote: str, target: str) -> float:
     target_tokens = norm_target.split()
 
     if not quote_tokens or not target_tokens:
+        return 0.0
+
+    # Fast pruning: if target doesn't even contain 70% of quote unique tokens, ratio cannot reach 0.90
+    quote_token_set = set(quote_tokens)
+    target_token_set = set(target_tokens)
+    common_tokens = quote_token_set & target_token_set
+    if len(common_tokens) / len(quote_token_set) < 0.70:
         return 0.0
 
     window_size = len(quote_tokens)
@@ -70,11 +78,11 @@ def verify_citation_quote(quote: str, chunk_text: str, threshold: float = 0.90) 
 
 
 def validate_citations_against_db(
-    citations: List[Dict[str, any]],
+    citations: List[Dict[str, Any]],
     db: Session,
     user_id: Optional[str] = None,
     document_id: Optional[str] = None,
-) -> Tuple[List[Dict[str, any]], List[Dict[str, any]], str]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], str]:
     """
     Validates a list of candidate citations returned by the LLM.
     Returns:
@@ -84,6 +92,7 @@ def validate_citations_against_db(
     """
     verified = []
     failed = []
+    cached_doc_chunks = None
 
     for cit in citations:
         chunk_id = cit.get("chunk_id")
@@ -98,10 +107,11 @@ def validate_citations_against_db(
         if chunk_id:
             chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
 
-        # If chunk not found by chunk_id, attempt to match against document chunks
+        # If chunk not found by chunk_id, attempt to match against document chunks (lazily cached)
         if not chunk and document_id:
-            all_doc_chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
-            for cand_chunk in all_doc_chunks:
+            if cached_doc_chunks is None:
+                cached_doc_chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
+            for cand_chunk in cached_doc_chunks:
                 is_match, score = verify_citation_quote(quote, cand_chunk.text)
                 if is_match:
                     chunk = cand_chunk

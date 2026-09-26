@@ -1,7 +1,16 @@
+import logging
 import os
 from typing import List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Named constant for the Gemini API key placeholder (avoids magic strings)
+GEMINI_KEY_PLACEHOLDER = "your_gemini_api_key_here"
+
+# Named constant for the insecure JWT default (avoids magic strings)
+_INSECURE_JWT_DEFAULT = "insecure_default_secret_key_at_least_32_bytes_long"
 
 
 class Settings(BaseSettings):
@@ -27,7 +36,7 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./chroma_data"
 
     # Security
-    JWT_SECRET: str = "insecure_default_secret_key_at_least_32_bytes_long"
+    JWT_SECRET: str = _INSECURE_JWT_DEFAULT
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000"]
@@ -36,6 +45,11 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_BYTES: int = 15 * 1024 * 1024  # 15 MB
     RATE_LIMIT_PER_MINUTE: str = "30/minute"
     UPLOAD_RATE_LIMIT_PER_MINUTE: str = "10/minute"
+
+    @property
+    def has_gemini_key(self) -> bool:
+        """Check if a real Gemini API key is configured (not placeholder or empty)."""
+        return bool(self.GEMINI_API_KEY) and self.GEMINI_API_KEY != GEMINI_KEY_PLACEHOLDER
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -48,3 +62,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Runtime warnings for insecure defaults (logged once at import time)
+if settings.JWT_SECRET == _INSECURE_JWT_DEFAULT:
+    logger.warning(
+        "JWT_SECRET is using the insecure default. Set a strong random secret "
+        "via the JWT_SECRET environment variable before deploying to production."
+    )

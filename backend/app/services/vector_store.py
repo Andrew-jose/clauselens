@@ -1,10 +1,14 @@
+import logging
 import os
 from typing import List, Dict, Optional, Any
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 _chroma_client = None
+_chunks_collection = None
 
 
 def get_chroma_client():
@@ -20,12 +24,15 @@ def get_chroma_client():
 
 
 def get_chunks_collection():
-    """Get or create the main chunks vector collection."""
-    client = get_chroma_client()
-    return client.get_or_create_collection(
-        name="clauselens_chunks",
-        metadata={"hnsw:space": "cosine"},
-    )
+    """Get or create the cached main chunks vector collection."""
+    global _chunks_collection
+    if _chunks_collection is None:
+        client = get_chroma_client()
+        _chunks_collection = client.get_or_create_collection(
+            name="clauselens_chunks",
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _chunks_collection
 
 
 def index_chunks(document_id: str, chunks: List[Dict[str, Any]], embeddings: List[List[float]]):
@@ -64,22 +71,20 @@ def search_chunks(
     """Retrieve top-k chunks for a document given a query embedding."""
     collection = get_chunks_collection()
 
-    total_count = collection.count()
-    if total_count == 0:
-        return []
-
-    actual_k = min(top_k, total_count)
-
     # Always enforce document scoping
     scoped_where = {"document_id": document_id}
     if where_filter:
         scoped_where = {"$and": [scoped_where, where_filter]}
 
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=actual_k,
-        where=scoped_where,
-    )
+    try:
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where=scoped_where,
+        )
+    except Exception as e:
+        logger.warning(f"ChromaDB query failed for document {document_id}: {e}")
+        return []
 
     retrieved = []
     if results and "ids" in results and results["ids"]:
@@ -104,5 +109,6 @@ def delete_document_vectors(document_id: str):
     try:
         collection = get_chunks_collection()
         collection.delete(where={"document_id": document_id})
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to delete ChromaDB vectors for document {document_id}: {e}")
+

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from typing import Dict, List, Optional, Any
@@ -5,6 +6,37 @@ from app.config import settings
 from app.services.verifier import strip_fabricated_citations
 
 logger = logging.getLogger(__name__)
+
+# Module-level cached Gemini model instances (configured once, reused per-request)
+_genai_configured = False
+_cached_models: Dict[str, Any] = {}
+
+
+def _ensure_genai_configured():
+    """Configure the genai library once at module level and cache the result."""
+    global _genai_configured
+    if not _genai_configured and settings.has_gemini_key:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        _genai_configured = True
+
+
+def _get_cached_model(model_name: str, system_prompt: str, temperature: float):
+    """Return a cached GenerativeModel instance, creating it if needed."""
+    _ensure_genai_configured()
+    prompt_hash = hashlib.sha256((system_prompt or "").encode("utf-8")).hexdigest()[:16]
+    cache_key = f"{model_name}:{temperature}:{prompt_hash}"
+    if cache_key not in _cached_models:
+        import google.generativeai as genai
+        _cached_models[cache_key] = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=system_prompt,
+            generation_config={
+                "response_mime_type": "application/json",
+                "temperature": temperature,
+            },
+        )
+    return _cached_models[cache_key]
 
 
 def generate_structured_json(
@@ -16,22 +48,13 @@ def generate_structured_json(
     """
     Execute a structured JSON generation call to Gemini.
     Forces JSON output mode and validates JSON parsing.
+    Uses module-level cached model instances for efficiency.
     """
     target_model = model_name or settings.GEMINI_FLASH_MODEL
 
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+    if settings.has_gemini_key:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-
-            model = genai.GenerativeModel(
-                model_name=target_model,
-                system_instruction=system_prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "temperature": temperature,
-                },
-            )
+            model = _get_cached_model(target_model, system_prompt, temperature)
 
             # First attempt
             response = model.generate_content(user_prompt)

@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 
 QA_SYSTEM_PROMPT = """You are a specialized legal document explainer for tenants.
 Answer the user's question using ONLY the CONTEXT chunks below.
@@ -36,7 +36,7 @@ QUESTION: {user_question}
 """
 
 
-def format_qa_context(chunks: List[Dict[str, any]]) -> str:
+def format_qa_context(chunks: List[Dict[str, Any]]) -> str:
     """Format retrieved chunks with their IDs, pages, and clause headers."""
     formatted = []
     for c in chunks:

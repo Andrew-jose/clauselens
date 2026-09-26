@@ -73,8 +73,8 @@ async def ask_document(
     db.add(user_msg)
     db.commit()
 
-    # 3. Retrieve relevant chunks from ChromaDB
-    retrieved_chunks = retrieve_relevant_chunks(payload.question, document_id, top_k=6)
+    # 3. Retrieve relevant chunks from ChromaDB (reusing request db session)
+    retrieved_chunks = retrieve_relevant_chunks(payload.question, document_id, top_k=6, db=db)
     context_str = build_qa_context_string(retrieved_chunks)
 
     # 4. Prompt Gemini with structured output & prompt isolation delimiters

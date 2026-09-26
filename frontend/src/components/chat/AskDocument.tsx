@@ -80,7 +80,13 @@ export const AskDocument: React.FC<AskDocumentProps> = ({
       </div>
 
       {/* Message List */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans">
+      <div
+        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 font-sans"
+        aria-live="polite"
+        aria-atomic="false"
+        role="log"
+        aria-label="Conversation message history"
+      >
         {messages.length === 0 ? (
           <div className="text-center py-12 text-slate-500 max-w-md mx-auto">
             <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-3">
@@ -155,7 +161,11 @@ export const AskDocument: React.FC<AskDocumentProps> = ({
         )}
 
         {isLoading && (
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 bg-slate-50 p-3 rounded-xl w-fit">
+          <div
+            className="flex items-center gap-2 text-xs font-semibold text-slate-500 bg-slate-50 p-3 rounded-xl w-fit"
+            role="status"
+            aria-live="polite"
+          >
             <Loader2 className="w-4 h-4 animate-spin text-brand-600" aria-hidden="true" />
             <span>Retrieving chunks &amp; verifying citations...</span>
           </div>

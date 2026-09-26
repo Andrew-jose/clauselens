@@ -212,6 +212,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-brand-500 selection:text-white">
+      {/* Accessible Keyboard Skip Link (A2) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-brand-600 focus:text-white focus:font-semibold focus:rounded-lg focus:shadow-xl focus:outline-none focus:ring-2 focus:ring-brand-400 focus:ring-offset-2 transition-transform"
+      >
+        Skip to main content
+      </a>
+
       {/* Navbar Header */}
       <Header
         documents={documents}
@@ -225,7 +233,7 @@ export default function App() {
       />
 
       {/* Main Workspace Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col">
+      <main id="main-content" tabIndex={-1} className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col outline-none">
         {documents.length === 0 ? (
           /* Empty State: Landing Hero */
           <div className="my-auto text-center py-16 px-4 max-w-2xl mx-auto space-y-6 animate-fadeIn">

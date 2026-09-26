@@ -90,3 +90,58 @@ def test_list_documents(sample_pdf_bytes):
 
     # Clean up
     client.delete(f"/api/documents/{doc_id}")
+
+
+def test_upload_empty_whitespace_pdf():
+    """T1: Verify uploading a valid PDF with zero text / only whitespace succeeds gracefully."""
+    import fitz
+    doc = fitz.open()
+    doc.new_page()  # creates blank page
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    resp = client.post(
+        "/api/documents",
+        files={"file": ("empty_lease.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["page_count"] == 1
+    doc_id = data["id"]
+
+    # Verify chunks are created safely
+    chunks_resp = client.get(f"/api/documents/{doc_id}/chunks")
+    assert chunks_resp.status_code == 200
+    assert len(chunks_resp.json()) >= 1
+
+    # Cleanup
+    client.delete(f"/api/documents/{doc_id}")
+
+
+def test_duplicate_document_upload(sample_pdf_bytes):
+    """T2: Verify concurrent/duplicate uploads of the same file are isolated with distinct IDs."""
+    resp1 = client.post(
+        "/api/documents",
+        files={"file": ("sample_lease.pdf", io.BytesIO(sample_pdf_bytes), "application/pdf")},
+    )
+    assert resp1.status_code == 201
+    doc1_id = resp1.json()["id"]
+
+    resp2 = client.post(
+        "/api/documents",
+        files={"file": ("sample_lease.pdf", io.BytesIO(sample_pdf_bytes), "application/pdf")},
+    )
+    assert resp2.status_code == 201
+    doc2_id = resp2.json()["id"]
+
+    # Both documents should exist independently
+    assert doc1_id != doc2_id
+
+    # Verify both can be retrieved
+    assert client.get(f"/api/documents/{doc1_id}").status_code == 200
+    assert client.get(f"/api/documents/{doc2_id}").status_code == 200
+
+    # Cleanup
+    client.delete(f"/api/documents/{doc1_id}")
+    client.delete(f"/api/documents/{doc2_id}")
