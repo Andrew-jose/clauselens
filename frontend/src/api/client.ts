@@ -10,7 +10,8 @@ import type {
   LawyerQuestionsData,
 } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8008/api';
+const rawBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8008/api';
+const API_BASE_URL = rawBaseUrl.trim().replace(/\/+$/, '');
 
 export interface HealthResponse {
   status: string;
@@ -85,7 +86,8 @@ export async function getDocumentChunks(id: string): Promise<DocumentChunk[]> {
 }
 
 export async function getClauses(id: string, category?: string): Promise<ClauseItem[]> {
-  const url = new URL(`${API_BASE_URL}/documents/${id}/clauses`);
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  const url = new URL(`${API_BASE_URL}/documents/${id}/clauses`, baseUrl);
   if (category) {
     url.searchParams.append('category', category);
   }
@@ -101,7 +103,8 @@ export async function getFindings(
   severity?: string,
   category?: string
 ): Promise<FindingItem[]> {
-  const url = new URL(`${API_BASE_URL}/documents/${id}/findings`);
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  const url = new URL(`${API_BASE_URL}/documents/${id}/findings`, baseUrl);
   if (severity) url.searchParams.append('severity', severity);
   if (category) url.searchParams.append('category', category);
 
