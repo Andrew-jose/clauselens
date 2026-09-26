@@ -22,7 +22,7 @@ from app.schemas.qa import (
     MessageResponse,
 )
 from app.services.retriever import retrieve_relevant_chunks, build_qa_context_string
-from app.services.prompts.qa import QA_SYSTEM_PROMPT, QA_USER_PROMPT_TEMPLATE
+from app.services.prompts.qa import QA_SYSTEM_PROMPT, QA_USER_PROMPT_TEMPLATE, sanitize_prompt_input
 from app.services.gemini_client import generate_structured_json
 from app.services.validator import validate_citations_against_db
 from app.services.verifier import run_self_check_verifier, strip_fabricated_citations
@@ -78,9 +78,10 @@ async def ask_document(
     context_str = build_qa_context_string(retrieved_chunks)
 
     # 4. Prompt Gemini with structured output & prompt isolation delimiters
+    sanitized_question = sanitize_prompt_input(payload.question)
     user_prompt = QA_USER_PROMPT_TEMPLATE.format(
         retrieved_chunks=context_str,
-        user_question=payload.question,
+        user_question=sanitized_question,
     )
 
     ai_output = generate_structured_json(

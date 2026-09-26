@@ -94,7 +94,10 @@ def test_list_documents(sample_pdf_bytes):
 
 def test_upload_empty_whitespace_pdf():
     """T1: Verify uploading a valid PDF with zero text / only whitespace succeeds gracefully."""
-    import fitz
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        import fitz
     doc = fitz.open()
     doc.new_page()  # creates blank page
     pdf_bytes = doc.tobytes()

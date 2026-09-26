@@ -1,5 +1,8 @@
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.session import get_db
@@ -28,6 +31,12 @@ def start_comparison(
     Start a side-by-side clause-level comparison between two leases.
     Synthesizes deltas, assesses tenant favorability, and validates citations on both documents.
     """
+    if payload.document_a_id == payload.document_b_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot compare a document with itself. Please select two distinct lease documents.",
+        )
+
     try:
         session = compare_documents(
             doc_a_id=payload.document_a_id,
@@ -40,7 +49,11 @@ def start_comparison(
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Comparison failed: {str(e)}")
+        logger.error(f"Comparison failed for documents {payload.document_a_id} and {payload.document_b_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Comparison failed. Please verify that both documents are readable and try again.",
+        )
 
     findings_out = [
         ComparisonFindingResponse(

@@ -138,6 +138,37 @@ def retrieve_relevant_chunks(
         top_k=top_k,
     )
 
+    if not chunks:
+        # Fallback to database chunks if vector search returned nothing (e.g. ChromaDB cold/empty)
+        from app.models.entities import Chunk
+        should_close = False
+        active_db = db
+        if active_db is None:
+            from app.db.session import SessionLocal
+            active_db = SessionLocal()
+            should_close = True
+        try:
+            db_chunks = active_db.query(Chunk).filter(Chunk.document_id == document_id).order_by(Chunk.page_number.asc()).all()
+            if db_chunks:
+                chunks = [
+                    {
+                        "id": c.id,
+                        "text": c.text,
+                        "metadata": {
+                            "document_id": document_id,
+                            "page_number": c.page_number,
+                            "clause_id": c.clause_id,
+                            "section_heading": c.section_heading,
+                        }
+                    }
+                    for c in db_chunks
+                ]
+        except Exception:
+            pass
+        finally:
+            if should_close:
+                active_db.close()
+
     if relevant_categories:
         chunks = rerank_chunks_by_categories(chunks, relevant_categories, document_id, db=db)
 

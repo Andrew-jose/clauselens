@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   checkHealth,
   checkGeminiHealth,
@@ -61,6 +61,9 @@ export default function App() {
   const [apiConnected, setApiConnected] = useState(true);
   const [geminiConnected, setGeminiConnected] = useState(false);
 
+  // In-memory cache for document data to prevent redundant roundtrips
+  const docDataCache = useRef<Record<string, { chunks: DocumentChunk[]; clauses: ClauseItem[]; findings: FindingItem[] }>>({});
+
   // Initial Health & Documents Load
   useEffect(() => {
     async function init() {
@@ -81,41 +84,84 @@ export default function App() {
     init();
   }, []);
 
-  // When selected document changes, load all related data
+  // When selected document changes, load core data (chunks, clauses, findings) with cancellation
   useEffect(() => {
     if (!selectedDocId) return;
 
+    // Check cache first for instant UI response
+    const cached = docDataCache.current[selectedDocId];
+    if (cached) {
+      setChunks(cached.chunks);
+      setClauses(cached.clauses);
+      setFindings(cached.findings);
+      return;
+    }
+
+    const controller = new AbortController();
+
     async function loadDocumentData() {
       try {
-        const [cList, clList, fList, planRes, qRes] = await Promise.allSettled([
-          getDocumentChunks(selectedDocId),
-          getClauses(selectedDocId),
-          getFindings(selectedDocId),
-          getActionPlan(selectedDocId),
-          getLawyerQuestions(selectedDocId),
+        const [cList, clList, fList] = await Promise.allSettled([
+          getDocumentChunks(selectedDocId, controller.signal),
+          getClauses(selectedDocId, undefined, controller.signal),
+          getFindings(selectedDocId, undefined, undefined, controller.signal),
         ]);
 
-        if (cList.status === 'fulfilled') setChunks(cList.value);
-        if (clList.status === 'fulfilled') setClauses(clList.value);
-        if (fList.status === 'fulfilled') setFindings(fList.value);
-        if (planRes.status === 'fulfilled') {
-          setActionPlan(planRes.value);
-          if (planRes.value.situation_type && planRes.value.urgency) {
-            setSituation({
-              situation_type: planRes.value.situation_type,
-              urgency: planRes.value.urgency,
-              relevant_categories: ['termination_penalties', 'term_renewal'],
-            });
-          }
+        if (controller.signal.aborted) return;
+
+        const newChunks = cList.status === 'fulfilled' ? cList.value : [];
+        const newClauses = clList.status === 'fulfilled' ? clList.value : [];
+        const newFindings = fList.status === 'fulfilled' ? fList.value : [];
+
+        setChunks(newChunks);
+        setClauses(newClauses);
+        setFindings(newFindings);
+
+        // Cache the successful load
+        docDataCache.current[selectedDocId] = {
+          chunks: newChunks,
+          clauses: newClauses,
+          findings: newFindings,
+        };
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Error loading document details:', err);
         }
-        if (qRes.status === 'fulfilled') setLawyerQuestions(qRes.value);
-      } catch (err) {
-        console.error('Error loading document details:', err);
       }
     }
 
     loadDocumentData();
+
+    return () => {
+      controller.abort();
+    };
   }, [selectedDocId]);
+
+  // Lazy-load Action Plan and Lawyer Questions only when user navigates to Situation or Lawyer Prep
+  useEffect(() => {
+    if (!selectedDocId) return;
+
+    if (activeTab === 'situation' && (!actionPlan || actionPlan.document_id !== selectedDocId)) {
+      getActionPlan(selectedDocId)
+        .then((plan) => {
+          setActionPlan(plan);
+          if (plan.situation_type && plan.urgency) {
+            setSituation({
+              situation_type: plan.situation_type,
+              urgency: plan.urgency,
+              relevant_categories: ['termination_penalties', 'term_renewal'],
+            });
+          }
+        })
+        .catch((err) => console.error('Error loading action plan:', err));
+    }
+
+    if (activeTab === 'lawyer' && (!lawyerQuestions || lawyerQuestions.document_id !== selectedDocId)) {
+      getLawyerQuestions(selectedDocId)
+        .then((qs) => setLawyerQuestions(qs))
+        .catch((err) => console.error('Error loading lawyer questions:', err));
+    }
+  }, [selectedDocId, activeTab, actionPlan, lawyerQuestions]);
 
   const selectedDocument = documents.find((d) => d.id === selectedDocId);
 

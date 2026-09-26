@@ -36,8 +36,22 @@ QUESTION: {user_question}
 """
 
 
+def sanitize_prompt_input(text: str) -> str:
+    """
+    Sanitize retrieved chunks and user question to neutralize prompt injection delimiter escapes.
+    Prevents uploaded lease text or malicious queries from breaking out of the context block.
+    """
+    if not text:
+        return ""
+    # Neutralize delimiter collision attempts
+    clean = text.replace("<<<DOCUMENT_CONTENT_END>>>", "[ESCAPED_DELIMITER]")
+    clean = clean.replace("<<<DOCUMENT_CONTENT_START>>>", "[ESCAPED_DELIMITER]")
+    clean = clean.replace("<<<", "«").replace(">>>", "»")
+    return clean
+
+
 def format_qa_context(chunks: List[Dict[str, Any]]) -> str:
-    """Format retrieved chunks with their IDs, pages, and clause headers."""
+    """Format retrieved chunks with their IDs, pages, and clause headers, sanitized against prompt injection."""
     formatted = []
     for c in chunks:
         meta = c.get("metadata", {})
@@ -45,7 +59,8 @@ def format_qa_context(chunks: List[Dict[str, Any]]) -> str:
         page = meta.get("page_number", 1)
         clause_id = meta.get("clause_id", "")
         heading = meta.get("section_heading", "")
-        text = c.get("text", "")
+        raw_text = c.get("text", "")
+        sanitized_text = sanitize_prompt_input(raw_text)
 
         header_str = f"[CHUNK id={chunk_id} page={page}"
         if clause_id:
@@ -54,6 +69,6 @@ def format_qa_context(chunks: List[Dict[str, Any]]) -> str:
             header_str += f" heading=\"{heading}\""
         header_str += "]"
 
-        formatted.append(f"{header_str}\n{text}\n")
+        formatted.append(f"{header_str}\n{sanitized_text}\n")
 
     return "\n---\n".join(formatted)

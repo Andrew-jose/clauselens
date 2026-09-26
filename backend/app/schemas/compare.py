@@ -1,11 +1,18 @@
 from datetime import datetime
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class CompareRequest(BaseModel):
     document_a_id: str
     document_b_id: str
+
+    @field_validator("document_b_id")
+    @classmethod
+    def validate_distinct_documents(cls, v: str, info) -> str:
+        if "document_a_id" in info.data and v == info.data["document_a_id"]:
+            raise ValueError("Cannot compare a document with itself. Please select two distinct lease documents.")
+        return v
 
 
 class ComparisonFindingResponse(BaseModel):

@@ -20,7 +20,7 @@ from app.schemas.documents import (
     DocumentStatusResponse,
     ChunkResponse,
 )
-from app.services.ingestion import validate_file_magic_bytes, extract_document_pages
+from app.services.ingestion import validate_file_magic_bytes, extract_document_pages, sanitize_filename
 from app.services.chunker import chunk_document_pages
 from app.services.embeddings import embed_texts
 from app.services.vector_store import index_chunks, delete_document_vectors
@@ -43,7 +43,7 @@ async def upload_document(
     Validates MIME type by magic bytes and enforces size limits (max 15 MB).
     Extracts pages, generates structure-aware chunks, and indexes into ChromaDB.
     """
-    filename = file.filename or "lease_document"
+    filename = sanitize_filename(file.filename)
 
     # Read content
     content = await file.read()

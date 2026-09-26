@@ -5,7 +5,7 @@ from app.schemas.clauses import ClauseCitation
 
 
 class SituationRequest(BaseModel):
-    context_text: str = Field(..., min_length=3, description="Tenant's free-text situation context")
+    context_text: str = Field(..., min_length=3, max_length=5000, description="Tenant's free-text situation context")
 
 
 class SituationResponse(BaseModel):

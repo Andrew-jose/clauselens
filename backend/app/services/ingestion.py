@@ -1,12 +1,38 @@
 import io
-from typing import List, Dict, Tuple, Any
-import fitz  # PyMuPDF
+import os
+import re
+import zipfile
+from typing import List, Dict, Tuple, Any, Optional
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz  # fallback for older versions
 import docx
+
+MAX_DOCX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024  # 50 MB safety ceiling
+
+
+def sanitize_filename(filename: Optional[str] = None) -> str:
+    """
+    Sanitize uploaded filename to prevent path traversal, control chars,
+    and null-byte injections.
+    """
+    if not filename:
+        return "lease_document"
+    # Normalize slashes and extract pure basename
+    clean = os.path.basename(filename.replace("\\", "/"))
+    # Remove null bytes and non-printable characters
+    clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', clean)
+    # Strip dangerous characters
+    clean = re.sub(r'[^\w\s\.\-]', '_', clean).strip()
+    return clean[:200] if clean else "lease_document"
 
 
 def validate_file_magic_bytes(content: bytes, filename: str) -> Tuple[bool, str]:
     """
     Validate uploaded file format by magic bytes (not just extension).
+    For DOCX, checks zip integrity and verifies standard OpenXML structures
+    while enforcing decompression bomb limits.
     Returns (is_valid, mime_type).
     """
     if len(content) < 4:
@@ -18,7 +44,19 @@ def validate_file_magic_bytes(content: bytes, filename: str) -> Tuple[bool, str]
 
     # DOCX magic bytes: PK\x03\x04 (ZIP format)
     if content.startswith(b"PK\x03\x04") and (filename.lower().endswith(".docx")):
-        return True, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                # Check for zip bomb / decompression exhaustion
+                total_uncompressed = sum(info.file_size for info in zf.infolist())
+                if total_uncompressed > MAX_DOCX_UNCOMPRESSED_BYTES:
+                    return False, "unknown"
+                # Legitimate docx files must contain OpenXML parts
+                namelist = zf.namelist()
+                if not any(name.startswith("word/") or name == "[Content_Types].xml" for name in namelist):
+                    return False, "unknown"
+            return True, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        except Exception:
+            return False, "unknown"
 
     return False, "unknown"
 
@@ -27,9 +65,17 @@ def extract_pdf_pages(content: bytes) -> List[Dict[str, Any]]:
     """
     Extract text page-by-page from a PDF using PyMuPDF.
     Strips embedded JavaScript, launch actions, and suspicious annotations for defense in depth.
+    Rejects encrypted or password-protected files safely.
     """
     pages_data = []
-    doc = fitz.open(stream=content, filetype="pdf")
+    try:
+        doc = fitz.open(stream=content, filetype="pdf")
+    except Exception as e:
+        raise ValueError(f"Corrupt or unreadable PDF document: {e}")
+
+    if doc.is_encrypted:
+        doc.close()
+        raise ValueError("Encrypted or password-protected PDF files are not supported.")
 
     try:
         for page_idx in range(len(doc)):
@@ -61,9 +107,13 @@ def extract_docx_pages(content: bytes) -> List[Dict[str, Any]]:
     """
     Extract text from a DOCX document using python-docx.
     Treats paragraphs as virtual pages or partitions into logical chunks.
+    Rejects corrupt archives safely.
     """
-    file_stream = io.BytesIO(content)
-    doc = docx.Document(file_stream)
+    try:
+        file_stream = io.BytesIO(content)
+        doc = docx.Document(file_stream)
+    except Exception as e:
+        raise ValueError(f"Invalid or corrupt DOCX document: {e}")
 
     paragraphs_text = []
     for p in doc.paragraphs:

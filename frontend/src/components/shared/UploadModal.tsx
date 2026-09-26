@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import { uploadDocument } from '../../api/client';
 import type { DocumentItem } from '../../types';
@@ -20,6 +20,27 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [uploadStep, setUploadStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedElement.current = document.activeElement as HTMLElement;
+    modalRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isUploading) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      previouslyFocusedElement.current?.focus();
+    };
+  }, [isOpen, isUploading, onClose]);
 
   if (!isOpen) return null;
 
@@ -88,11 +109,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-labelledby="upload-modal-title"
-      onKeyDown={(e) => e.key === 'Escape' && !isUploading && onClose()}
     >
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         {/* Header */}

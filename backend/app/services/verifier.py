@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Regex pattern rejecting fabricated statute citations or case names (§7.7)
 FABRICATED_LEGAL_CITATION_PATTERN = re.compile(
-    r'(?:§+\s*[0-9]+|(?:[A-Z][a-z]+\.?\s+)+(?:Code|Stat|Ann\.|Rev\.|Reg\.)|(?:[A-Z][a-z]+)\s+v\.\s+(?:[A-Z][a-z]+))',
+    r'(?:§+\s*[0-9]+|(?:Section|Sec\.)\s+[0-9]+(?:\s+of\s+the\s+[A-Za-z\s]+Act(?:\s+[0-9]{4})?)?|(?:[A-Z][a-z]+\.?\s+)+(?:Code|Stat|Ann\.|Rev\.|Reg\.|Act(?:\s+[0-9]{4})?)|(?:[A-Z][a-z]+)\s+v\.\s+(?:[A-Z][a-z]+))',
     re.IGNORECASE
 )
 

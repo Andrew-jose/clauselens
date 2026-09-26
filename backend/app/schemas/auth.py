@@ -7,8 +7,8 @@ EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class UserRegisterRequest(BaseModel):
-    email: str = Field(..., description="User email address")
-    password: str = Field(..., min_length=6, description="Password (at least 6 characters)")
+    email: str = Field(..., max_length=255, description="User email address")
+    password: str = Field(..., min_length=6, max_length=128, description="Password (at least 6 characters, max 128)")
 
     @field_validator("email")
     @classmethod
@@ -20,8 +20,8 @@ class UserRegisterRequest(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    email: str = Field(..., description="User email address")
-    password: str = Field(..., description="User password")
+    email: str = Field(..., max_length=255, description="User email address")
+    password: str = Field(..., max_length=128, description="User password")
 
     @field_validator("email")
     @classmethod
